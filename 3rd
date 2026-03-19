@@ -1,0 +1,60 @@
+#define RELAY_PIN  2
+#define PUMP_TIME  10  // ← sekundy pracy pompy
+
+// Wysyła komendę do Nextion (kończy 3x 0xFF)
+void nexCmd(String cmd) {
+  Serial.print(cmd);
+  Serial.write(0xFF);
+  Serial.write(0xFF);
+  Serial.write(0xFF);
+}
+
+void runPump() {
+  // Włącz pompę i przejdź na stronę 1
+  digitalWrite(RELAY_PIN, LOW);
+  nexCmd("page 1");
+  delay(150); // czas na załadowanie strony
+
+  // Zeruj progress bar
+  nexCmd("j0.val=0");
+
+  unsigned long startTime = millis();
+  unsigned long totalMs = (unsigned long)PUMP_TIME * 1000;
+
+  // Pętla aktualizacji progress bara
+  while (millis() - startTime < totalMs) {
+    unsigned long elapsed = millis() - startTime;
+    int percent = (int)((elapsed * 100UL) / totalMs);
+    nexCmd("j0.val=" + String(percent));
+    delay(200); // aktualizacja co 200ms
+  }
+
+  // Koniec – ustaw 100%, wyłącz pompę, wróć do strony 0
+  nexCmd("j0.val=100");
+  delay(300);
+  digitalWrite(RELAY_PIN, HIGH);
+  delay(300);
+  nexCmd("page 0");
+}
+
+void setup() {
+  Serial.begin(9600);
+  pinMode(RELAY_PIN, OUTPUT);
+  digitalWrite(RELAY_PIN, HIGH);
+}
+
+void loop() {
+  if (Serial.available()) {
+    byte buf[7];
+    delay(20);
+    int count = 0;
+    while (Serial.available() && count < 7) {
+      buf[count++] = Serial.read();
+    }
+
+    // Reaguj na puszczenie przycisku (release = 0x01)
+    if (count >= 4 && buf[0] == 0x65 && buf[3] == 0x01) {
+      runPump();
+    }
+  }
+}
