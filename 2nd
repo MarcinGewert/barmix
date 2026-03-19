@@ -1,0 +1,29 @@
+#define RELAY_PIN  2
+#define PUMP_TIME  10  // ← zmień tutaj ile sekund ma pracować pompa
+
+void setup() {
+  Serial.begin(9600);
+  pinMode(RELAY_PIN, OUTPUT);
+  digitalWrite(RELAY_PIN, HIGH); // przekaźnik wyłączony
+  Serial.println("Gotowy");
+}
+
+void loop() {
+  if (Serial.available()) {
+    byte buf[7];
+    delay(20);
+    int count = 0;
+    while (Serial.available() && count < 7) {
+      buf[count++] = Serial.read();
+    }
+
+    // Tylko release (puszczenie) żeby nie odpalać wielokrotnie
+    if (count >= 4 && buf[0] == 0x65 && buf[3] == 0x01) {
+      Serial.println("Start pompy!");
+      digitalWrite(RELAY_PIN, LOW);           // pompa WŁĄCZ
+      delay((unsigned long)PUMP_TIME * 1000); // czekaj X sekund
+      digitalWrite(RELAY_PIN, HIGH);          // pompa WYŁĄCZ
+      Serial.println("Pompa zatrzymana.");
+    }
+  }
+}
