@@ -1,0 +1,102 @@
+#define RELAY_PIN_1  2   // pompa 1
+#define RELAY_PIN_2  3   // pompa 2
+#define RELAY_PIN_3  4   // pompa 3
+#define RELAY_PIN_4  5   // pompa 4
+#define RELAY_PIN_5  6   // pompa 5
+#define RELAY_PIN_6  7   // pompa 6
+
+// Czasy pracy pomp dla mohito (w milisekundach) – tu modyfikujesz
+#define MOHITO_PUMP1  5000   // pompa 1 – np. rum
+#define MOHITO_PUMP2  3000   // pompa 2 – np. sok limonkowy
+#define MOHITO_PUMP3  2000   // pompa 3 – np. syrop cukrowy
+#define MOHITO_PUMP4  4000   // pompa 4 – np. woda gazowana
+#define MOHITO_PUMP5  0      // 0 = nieużywana
+#define MOHITO_PUMP6  0      // 0 = nieużywana
+
+// Całkowity czas trwania mohito (dla progress bara)
+// Ustaw na czas najdłużej pracującej pompy
+#define MOHITO_TOTAL  max(max(max(MOHITO_PUMP1, MOHITO_PUMP2), max(MOHITO_PUMP3, MOHITO_PUMP4)), max(MOHITO_PUMP5, MOHITO_PUMP6))
+
+void nexCmd(String cmd) {
+  Serial.print(cmd);
+  Serial.write(0xFF);
+  Serial.write(0xFF);
+  Serial.write(0xFF);
+}
+
+// Włącz pompę jeśli jej czas > 0
+void startPump(int pin, unsigned long pumpTime) {
+  if (pumpTime > 0) digitalWrite(pin, LOW);
+}
+
+// Wyłącz pompę jeśli jej czas minął
+void updatePump(int pin, unsigned long pumpTime, unsigned long elapsed) {
+  if (pumpTime > 0 && elapsed >= pumpTime) digitalWrite(pin, HIGH);
+}
+
+void mohito() {
+  // Przejdź na stronę 1 z progress barem
+  nexCmd("page 1");
+  delay(150);
+  nexCmd("j0.val=0");
+
+  // Włącz wszystkie pompy które mają czas > 0
+  startPump(RELAY_PIN_1, MOHITO_PUMP1);
+  startPump(RELAY_PIN_2, MOHITO_PUMP2);
+  startPump(RELAY_PIN_3, MOHITO_PUMP3);
+  startPump(RELAY_PIN_4, MOHITO_PUMP4);
+  startPump(RELAY_PIN_5, MOHITO_PUMP5);
+  startPump(RELAY_PIN_6, MOHITO_PUMP6);
+
+  unsigned long startTime = millis();
+
+  // Pętla – wyłączaj pompy gdy ich czas minie, aktualizuj progress bar
+  while (millis() - startTime < MOHITO_TOTAL) {
+    unsigned long elapsed = millis() - startTime;
+
+    updatePump(RELAY_PIN_1, MOHITO_PUMP1, elapsed);
+    updatePump(RELAY_PIN_2, MOHITO_PUMP2, elapsed);
+    updatePump(RELAY_PIN_3, MOHITO_PUMP3, elapsed);
+    updatePump(RELAY_PIN_4, MOHITO_PUMP4, elapsed);
+    updatePump(RELAY_PIN_5, MOHITO_PUMP5, elapsed);
+    updatePump(RELAY_PIN_6, MOHITO_PUMP6, elapsed);
+
+    int percent = (int)((elapsed * 100UL) / MOHITO_TOTAL);
+    nexCmd("j0.val=" + String(percent));
+
+    delay(200);
+  }
+
+  // Upewnij się że wszystkie pompy wyłączone
+  for (int pin = RELAY_PIN_1; pin <= RELAY_PIN_6; pin++) {
+    digitalWrite(pin, HIGH);
+  }
+
+  nexCmd("j0.val=100");
+  delay(300);
+  nexCmd("page 0");
+}
+
+void setup() {
+  Serial.begin(9600);
+  for (int pin = RELAY_PIN_1; pin <= RELAY_PIN_6; pin++) {
+    pinMode(pin, OUTPUT);
+    digitalWrite(pin, HIGH); // wszystkie wyłączone na starcie
+  }
+}
+
+void loop() {
+  if (Serial.available()) {
+    byte buf[7];
+    delay(20);
+    int count = 0;
+    while (Serial.available() && count < 7) {
+      buf[count++] = Serial.read();
+    }
+
+    // Strona 0, przycisk b0 (ID=1), release
+    if (count >= 4 && buf[0] == 0x65 && buf[1] == 0x00 && buf[2] == 0x01 && buf[3] == 0x01) {
+      mohito();
+    }
+  }
+}
