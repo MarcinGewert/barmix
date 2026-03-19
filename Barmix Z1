@@ -1,0 +1,269 @@
+// ===================== KALIBRACJA =====================
+#define ML_PER_SEC  4.17
+#define ML_TO_MS(ml)  ((unsigned long)((ml) / ML_PER_SEC * 1000))
+
+// ===================== PINY =====================
+#define PUMP_TEQUILA   2
+#define PUMP_RUM       3
+#define PUMP_WODKA     4
+#define PUMP_TRIPLESEC 5
+#define PUMP_SOK_POM   6
+#define PUMP_LIMONKA   7
+
+// ===================== NUMERY STRON =====================
+#define PAGE_STARTUP  0
+#define PAGE_MENU     1
+#define PAGE_PROGRESS 2
+#define PAGE_INFO     3
+#define PAGE_CLEANING  4
+
+// ===================== RECEPTURY =====================
+#define MARGARITA_TEQUILA    ML_TO_MS(40)
+#define MARGARITA_TRIPLESEC  ML_TO_MS(20)
+#define MARGARITA_LIMONKA    ML_TO_MS(20)
+#define MARGARITA_TOTAL      max(max(MARGARITA_TEQUILA, MARGARITA_TRIPLESEC), MARGARITA_LIMONKA)
+
+#define DAIQUIRI_RUM      ML_TO_MS(50)
+#define DAIQUIRI_LIMONKA  ML_TO_MS(25)
+#define DAIQUIRI_TOTAL    max(DAIQUIRI_RUM, DAIQUIRI_LIMONKA)
+
+#define VODKASOUR_WODKA    ML_TO_MS(50)
+#define VODKASOUR_LIMONKA  ML_TO_MS(25)
+#define VODKASOUR_TOTAL    max(VODKASOUR_WODKA, VODKASOUR_LIMONKA)
+
+#define TEQUILASUNRISE_TEQUILA  ML_TO_MS(50)
+#define TEQUILASUNRISE_SOK_POM  ML_TO_MS(120)
+#define TEQUILASUNRISE_TOTAL    max(TEQUILASUNRISE_TEQUILA, TEQUILASUNRISE_SOK_POM)
+
+#define SCREWDRIVER_WODKA    ML_TO_MS(50)
+#define SCREWDRIVER_SOK_POM  ML_TO_MS(120)
+#define SCREWDRIVER_TOTAL    max(SCREWDRIVER_WODKA, SCREWDRIVER_SOK_POM)
+
+#define MOHITO_RUM      ML_TO_MS(50)
+#define MOHITO_LIMONKA  ML_TO_MS(25)
+#define MOHITO_TOTAL    max(MOHITO_RUM, MOHITO_LIMONKA)
+
+#define VIRGIN_SOK_POM   ML_TO_MS(120)
+#define VIRGIN_LIMONKA   ML_TO_MS(20)
+#define VIRGIN_TOTAL     max(VIRGIN_SOK_POM, VIRGIN_LIMONKA)
+
+// ===================== STRUKTURA =====================
+struct DrinkStep {
+  int pin;
+  unsigned long duration;
+};
+
+// ===================== NEXTION =====================
+void nexCmd(String cmd) {
+  Serial.print(cmd);
+  Serial.write(0xFF);
+  Serial.write(0xFF);
+  Serial.write(0xFF);
+}
+
+// ===================== EKRAN INSTRUKCJI =====================
+void showInstructions(String l0, String l1, String l2, String l3) {
+  nexCmd("page " + String(PAGE_INFO));
+  delay(150);
+  nexCmd("t0.txt=\"" + l0 + "\"");
+  nexCmd("t1.txt=\"" + l1 + "\"");
+  nexCmd("t2.txt=\"" + l2 + "\"");
+  nexCmd("t3.txt=\"" + l3 + "\"");
+
+  // Czekaj na "Gotowe" (b0, ID=1, page 3)
+  while (true) {
+    if (Serial.available()) {
+      byte buf[7];
+      delay(20);
+      int count = 0;
+      while (Serial.available() && count < 7) {
+        buf[count++] = Serial.read();
+      }
+      if (count >= 4 && buf[0] == 0x65 && buf[1] == PAGE_INFO && buf[3] == 0x01) {
+        nexCmd("page " + String(PAGE_MENU));
+        break;
+      }
+    }
+  }
+}
+
+// ===================== SILNIK DRINKU =====================
+void makeDrink(DrinkStep steps[], int numSteps, unsigned long totalTime,
+               String l0, String l1, String l2, String l3) {
+  nexCmd("page " + String(PAGE_PROGRESS));
+  delay(150);
+  nexCmd("j0.val=0");
+
+  for (int i = 0; i < numSteps; i++) {
+    if (steps[i].duration > 0) digitalWrite(steps[i].pin, LOW);
+  }
+
+  unsigned long startTime = millis();
+
+  while (millis() - startTime < totalTime) {
+    unsigned long elapsed = millis() - startTime;
+
+    for (int i = 0; i < numSteps; i++) {
+      if (steps[i].duration > 0 && elapsed >= steps[i].duration) {
+        digitalWrite(steps[i].pin, HIGH);
+      }
+    }
+
+    int percent = (int)((elapsed * 100UL) / totalTime);
+    nexCmd("j0.val=" + String(percent));
+    delay(200);
+  }
+
+  for (int i = 0; i < numSteps; i++) {
+    digitalWrite(steps[i].pin, HIGH);
+  }
+
+  nexCmd("j0.val=100");
+  delay(500);
+  showInstructions(l0, l1, l2, l3);
+}
+
+// ===================== FUNKCJE DRINKÓW =====================
+void mohito() {
+  DrinkStep steps[] = {
+    {PUMP_RUM,     MOHITO_RUM},
+    {PUMP_LIMONKA, MOHITO_LIMONKA}
+  };
+  makeDrink(steps, 2, MOHITO_TOTAL,
+    "*** MOHITO ***", "Dodaj lod", "Dodaj listki miety", "Zamieszaj");
+}
+
+void margarita() {
+  DrinkStep steps[] = {
+    {PUMP_TEQUILA,   MARGARITA_TEQUILA},
+    {PUMP_TRIPLESEC, MARGARITA_TRIPLESEC},
+    {PUMP_LIMONKA,   MARGARITA_LIMONKA}
+  };
+  makeDrink(steps, 3, MARGARITA_TOTAL,
+    "*** MARGARITA ***", "Dodaj lod", "Dolej 10ml syropu cukrowego", "Zamieszaj");
+}
+
+void daiquiri() {
+  DrinkStep steps[] = {
+    {PUMP_RUM,     DAIQUIRI_RUM},
+    {PUMP_LIMONKA, DAIQUIRI_LIMONKA}
+  };
+  makeDrink(steps, 2, DAIQUIRI_TOTAL,
+    "*** DAIQUIRI ***", "Dodaj lod", "Dolej 10ml syropu cukrowego", "Zamieszaj");
+}
+
+void vodkaSour() {
+  DrinkStep steps[] = {
+    {PUMP_WODKA,   VODKASOUR_WODKA},
+    {PUMP_LIMONKA, VODKASOUR_LIMONKA}
+  };
+  makeDrink(steps, 2, VODKASOUR_TOTAL,
+    "*** VODKA SOUR ***", "Dodaj lod", "Dolej 15ml syropu cukrowego", "Zamieszaj");
+}
+
+void tequilaSunrise() {
+  DrinkStep steps[] = {
+    {PUMP_TEQUILA, TEQUILASUNRISE_TEQUILA},
+    {PUMP_SOK_POM, TEQUILASUNRISE_SOK_POM}
+  };
+  makeDrink(steps, 2, TEQUILASUNRISE_TOTAL,
+    "*** TEQUILA SUNRISE ***", "Dodaj lod", "Zamieszaj delikatnie", "");
+}
+
+void screwdriver() {
+  DrinkStep steps[] = {
+    {PUMP_WODKA,   SCREWDRIVER_WODKA},
+    {PUMP_SOK_POM, SCREWDRIVER_SOK_POM}
+  };
+  makeDrink(steps, 2, SCREWDRIVER_TOTAL,
+    "*** SCREWDRIVER ***", "Dodaj lod", "Zamieszaj", "");
+}
+
+void virginLimeOrange() {
+  DrinkStep steps[] = {
+    {PUMP_SOK_POM, VIRGIN_SOK_POM},
+    {PUMP_LIMONKA, VIRGIN_LIMONKA}
+  };
+  makeDrink(steps, 2, VIRGIN_TOTAL,
+    "*** VIRGIN LIME ORANGE ***", "Dodaj lod", "Dolej 10ml syropu cukrowego", "Zamieszaj");
+}
+// ===================== CZYSZCZENIE =====================
+void cleaning() {
+   while (Serial.available()) Serial.read();
+  nexCmd("page " + String(PAGE_PROGRESS));
+  delay(300);
+  nexCmd("j0.val=0");
+
+  // Włącz wszystkie pompy na 10 sekund
+  int pins[] = {PUMP_TEQUILA, PUMP_RUM, PUMP_WODKA, PUMP_TRIPLESEC, PUMP_SOK_POM, PUMP_LIMONKA};
+  for (int i = 0; i < 6; i++) {
+    digitalWrite(pins[i], LOW);
+  }
+
+  unsigned long startTime = millis();
+  unsigned long totalMs = 10000; // 10 sekund
+
+  while (millis() - startTime < totalMs) {
+    unsigned long elapsed = millis() - startTime;
+    int percent = (int)((elapsed * 100UL) / totalMs);
+    nexCmd("j0.val=" + String(percent));
+    delay(200);
+  }
+
+  // Wyłącz wszystkie pompy
+  for (int i = 0; i < 6; i++) {
+    digitalWrite(pins[i], HIGH);
+  }
+
+  nexCmd("j0.val=100");
+  delay(500);
+  nexCmd("page " + String(PAGE_MENU));
+}
+// ===================== SETUP & LOOP =====================
+void setup() {
+  Serial.begin(9600);
+  int pins[] = {PUMP_TEQUILA, PUMP_RUM, PUMP_WODKA, PUMP_TRIPLESEC, PUMP_SOK_POM, PUMP_LIMONKA};
+  for (int i = 0; i < 6; i++) {
+    pinMode(pins[i], OUTPUT);
+    digitalWrite(pins[i], HIGH);
+  }
+
+  delay(500);
+  nexCmd("page " + String(PAGE_STARTUP)); // pokaż ekran startowy przy włączeniu
+}
+
+void loop() {
+  if (Serial.available()) {
+    byte buf[7];
+    delay(20);
+    int count = 0;
+    while (Serial.available() && count < 7) {
+      buf[count++] = Serial.read();
+    }
+
+    if (count >= 4 && buf[0] == 0x65 && buf[3] == 0x01) {
+
+      if (buf[1] == PAGE_STARTUP && buf[2] == 0x07) {
+        nexCmd("page " + String(PAGE_MENU));
+      }
+
+      if (buf[1] == PAGE_MENU) {
+        switch (buf[2]) {
+          case 1: mohito();           break;
+          case 2: margarita();        break;
+          case 3: daiquiri();         break;
+          case 4: vodkaSour();        break;
+          case 5: tequilaSunrise();   break;
+          case 6: screwdriver();      break;
+          case 7: virginLimeOrange(); break;
+          case 8: nexCmd("page " + String(PAGE_CLEANING)); break;
+        }
+      }
+
+      if (buf[1] == PAGE_CLEANING) {
+        if (buf[2] == 0x02) cleaning();
+        if (buf[2] == 0x03) nexCmd("page " + String(PAGE_MENU));
+      }
+    }
+  }
+}
